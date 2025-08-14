@@ -1,25 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello, World!</title>
-    <style>
-        body {
-            background-color: #333333; /* Dark grey */
-            color: #ffffff; /* White text for contrast */
-            font-family: sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Media Receiver</title>
+  
+  <!--
+    Import the Google Cast CAF (Cast Application Framework) SDK.
+    This library provides the core functionality for your receiver,
+    including media playback, session management, and communication
+    with sender applications.
+  -->
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  
+  <style>
+    /*
+      Global styles to center the content and provide a clean look
+      on the television screen. The background is set to a dark color
+      for a better viewing experience.
+    */
+    body {
+      background-color: #121212;
+      color: #ffffff;
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /*
+      The <cast-media-player> element is a built-in UI component from the CAF SDK.
+      It automatically handles media playback and displays the progress bar,
+      title, and other media information. We style it to fill the screen.
+    */
+    cast-media-player {
+      width: 100%;
+      height: 100%;
+    }
+
+    /*
+      A simple loading indicator that appears while the media is buffering.
+    */
+    .loading-spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid #fff;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <!-- 
+    The cast-media-player element is where the media will be rendered.
+    The CAF SDK automatically binds to this element to control playback.
+  -->
+  <cast-media-player></cast-media-player>
+  
+  <div id="loading-indicator" class="loading-spinner" style="display: none;"></div>
+  
+  <script>
+    // Get a singleton instance of the CastReceiverContext.
+    // This object is the main entry point for the receiver application.
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+    const loadingIndicator = document.getElementById('loading-indicator');
 
-    <h1>Hello, World!</h1>
+    /**
+     * Set up an interceptor for the LOAD message.
+     * This allows you to inspect or modify the media request before it is
+     * handled by the default media player.
+     * @param {cast.framework.messages.LoadRequestData} loadRequestData The load request.
+     * @return {cast.framework.messages.LoadRequestData} The modified load request.
+     */
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (loadRequestData) => {
+        console.log('Intercepting LOAD message', loadRequestData);
+        // You can add custom business logic here, such as:
+        // - Modifying the content URL (e.g., adding a token).
+        // - Handling custom data from the sender.
+        // - Enforcing business rules (e.g., content restrictions).
+        
+        // Return the load request data to continue the default playback process.
+        return loadRequestData;
+      }
+    );
 
+    /**
+     * Listen for media player state changes to show/hide the loading spinner.
+     */
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_STATE_CHANGED,
+      (event) => {
+        const playerState = event.playerState;
+        console.log('Player state changed:', playerState);
+
+        if (playerState === cast.framework.messages.PlayerState.BUFFERING) {
+          loadingIndicator.style.display = 'block';
+        } else {
+          loadingIndicator.style.display = 'none';
+        }
+      }
+    );
+
+    /**
+     * Starts the CastReceiverContext. This must be the last step.
+     * It signals to the Cast device that your application is ready to
+     * receive messages and media playback requests.
+     */
+    context.start();
+  </script>
 </body>
 </html>
