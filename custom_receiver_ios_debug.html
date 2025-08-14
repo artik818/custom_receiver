@@ -119,6 +119,18 @@
       }
     );
 
+    // --- NEW: Low-Latency HLS Configuration ---
+    // Get the current playback configuration.
+    const playbackConfig = playerManager.getPlaybackConfig();
+
+    // Enable Low-Latency HLS. This is the key setting for LL-HLS playback.
+    // It signals to the CAF SDK that it should use the player optimized for LL-HLS.
+    playbackConfig.lowLatencyHls = true;
+
+    // Set the updated playback configuration.
+    playerManager.setPlaybackConfig(playbackConfig);
+    // --- END NEW SECTION ---
+
     /**
      * Starts the CastReceiverContext. This must be the last step.
      * It signals to the Cast device that your application is ready to
