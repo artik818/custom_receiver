@@ -1,44 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>HLS Low Latency Receiver</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-<style>
-  body { margin:0; background:black; }
-  video { width:100%; height:100%; background:black; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello, World!</title>
+    <style>
+        body {
+            background-color: #333333; /* Dark grey */
+            color: #ffffff; /* White text for contrast */
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+    </style>
 </head>
 <body>
-<video id="video" autoplay playsinline></video>
 
-<script>
-  const context = cast.framework.CastReceiverContext.getInstance();
-  const playerManager = context.getPlayerManager();
+    <h1>Hello, World!</h1>
 
-  playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, loadRequestData => {
-    const url = loadRequestData.media.contentId;
-    const video = document.getElementById('video');
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        liveSyncDuration: 2,          // целимся на ~2 секунды до лайва
-        liveMaxLatencyDuration: 3,    // не даём задержке расти
-        lowLatencyMode: true,         // включаем LL-HLS режим
-        backBufferLength: 0           // не храним лишний буфер
-      });
-      hls.loadSource(url);
-      hls.attachMedia(video);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url;
-    }
-
-    return loadRequestData;
-  });
-
-  context.start();
-</script>
 </body>
 </html>
-
