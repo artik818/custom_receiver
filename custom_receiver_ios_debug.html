@@ -1,142 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Custom Media Receiver</title>
-  
-  <!--
-    Import the Google Cast CAF (Cast Application Framework) SDK.
-    This library provides the core functionality for your receiver,
-    including media playback, session management, and communication
-    with sender applications.
-  -->
-  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-  
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cast Receiver — CMAF Low Latency (Shaka)</title>
+  <!-- Chromecast CAF Receiver Framework -->
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <!-- Shaka Player (compiled) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.9.6/shaka-player.compiled.js"></script>
   <style>
-    /*
-      Global styles to center the content and provide a clean look
-      on the television screen. The background is set to a dark color
-      for a better viewing experience.
-    */
-    body {
-      background-color: #121212;
-      color: #ffffff;
-      font-family: 'Inter', sans-serif;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      width: 100vw;
-    }
-
-    /*
-      The <cast-media-player> element is a built-in UI component from the CAF SDK.
-      It automatically handles media playback and displays the progress bar,
-      title, and other media information. We style it to fill the screen.
-    */
-    cast-media-player {
-      width: 100%;
-      height: 100%;
-    }
-
-    /*
-      A simple loading indicator that appears while the media is buffering.
-    */
-    .loading-spinner {
-      border: 4px solid rgba(255, 255, 255, 0.3);
-      border-top: 4px solid #fff;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+    html, body { height: 100%; margin: 0; background: #0b0b10; color: #e7e7ee; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    #root { display: grid; place-items: center; height: 100%; }
+    video { width: 100vw; height: 100vh; object-fit: contain; background: #000; }
+    .badge { position: fixed; top: 12px; left: 12px; padding: 6px 10px; border-radius: 12px; font-size: 12px; background: rgba(255,255,255,0.08);}
+    .status { position: fixed; bottom: 12px; left: 12px; padding: 6px 10px; border-radius: 12px; font-size: 12px; background: rgba(255,255,255,0.08);}  
   </style>
 </head>
 <body>
-  <!-- 
-    The cast-media-player element is where the media will be rendered.
-    The CAF SDK automatically binds to this element to control playback.
-  -->
-  <cast-media-player></cast-media-player>
-  
-  <div id="loading-indicator" class="loading-spinner" style="display: none;"></div>
-  
+  <div id="root">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="badge">CMAF + Chunked • Custom Receiver</div>
+    <div class="status" id="status">Idle</div>
+  </div>
+
   <script>
-    // Get a singleton instance of the CastReceiverContext.
-    // This object is the main entry point for the receiver application.
+    /*
+     * 💡 Overview
+     * ------------------------------------------------------------
+     * This is a CUSTOM Chromecast Receiver app that plays DASH/HLS
+     * packaged as CMAF, tuned for low latency using Shaka Player.
+     *
+     * Communication protocol (simple & robust):
+     * - Sender sends a message on a custom namespace with the stream URL
+     *   { type: 'LOAD', url: 'https://cdn.example.com/live/manifest.mpd', drm: {...optional...}, config: {...optional...} }
+     * - Receiver loads the manifest with Shaka, configured for LL playback.
+     *
+     * You can also add a LOAD interceptor to handle CAF default LOAD,
+     * but a custom namespace keeps it predictable across sender platforms.
+     */
+
+    const NAMESPACE = 'urn:x-cast:com.example.cmaf'; // change to your own
+
+    const video = document.getElementById('video');
+    const statusEl = document.getElementById('status');
+
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
-    const loadingIndicator = document.getElementById('loading-indicator');
 
-    /**
-     * Set up an interceptor for the LOAD message.
-     * This allows you to inspect or modify the media request before it is
-     * handled by the default media player.
-     * @param {cast.framework.messages.LoadRequestData} loadRequestData The load request.
-     * @return {cast.framework.messages.LoadRequestData} The modified load request.
-     */
-    playerManager.setMessageInterceptor(
-      cast.framework.messages.MessageType.LOAD,
-      (loadRequestData) => {
-        console.log('Intercepting LOAD message', loadRequestData);
-        // You can add custom business logic here, such as:
-        // - Modifying the content URL (e.g., adding a token).
-        // - Handling custom data from the sender.
-        // - Enforcing business rules (e.g., content restrictions).
-        
-        // Return the load request data to continue the default playback process.
-        return loadRequestData;
-      }
-    );
+    // Keep device awake and avoid idle timeout while streaming
+    context.setLoggerLevel(cast.framework.LoggerLevel.INFO);
+    context.start({
+      statusText: 'Starting…',
+      disableIdleTimeout: true,
+    });
 
-    /**
-     * Listen for media player state changes to show/hide the loading spinner.
-     */
-    playerManager.addEventListener(
-      cast.framework.events.EventType.PLAYER_STATE_CHANGED,
-      (event) => {
-        const playerState = event.playerState;
-        console.log('Player state changed:', playerState);
+    // Create Shaka Player
+    const player = new shaka.Player(video);
 
-        if (playerState === cast.framework.messages.PlayerState.BUFFERING) {
-          loadingIndicator.style.display = 'block';
-        } else {
-          loadingIndicator.style.display = 'none';
+    // Basic logging for debugging on cast console
+    shaka.log.setLevel('info');
+
+    // Configure Shaka for low latency playback
+    // These values are a good starting point; tweak per your network/CDN.
+    player.configure({
+      streaming: {
+        lowLatencyMode: true,            // enable LL heuristics
+        bufferingGoal: 2,               // seconds of media to buffer
+        rebufferingGoal: 1,             // seconds required to resume after stall
+        inaccurateManifestTolerance: 0, // be strict about live edge
+        jumpLargeGaps: true,
+        smallGapLimit: 0.6,             // seconds; allows micro-gaps
+        stallEnabled: true,
+        stallThreshold: 0.5,            // consider a stall if 500ms no progress
+        retryParameters: {
+          timeout: 8000,
+          stallTimeout: 8000,
+          connectionTimeout: 8000,
+          maxAttempts: 3,
+          baseDelay: 250,
+          backoffFactor: 2,
+          fuzzFactor: 0.5,
+          requestTimeout: 8000,
         }
+      },
+      manifest: {
+        defaultPresentationDelay: 1.5,   // target live latency in seconds
+        dash: {
+          ignoreMinBufferTime: true,     // let our bufferingGoal drive it
+          autoCorrectDrift: true,
+        },
+        hls: {
+          useFullSegmentsForStartTime: false,
+        }
+      },
+      abr: {
+        enabled: true,
+        defaultBandwidthEstimate: 5_000_000, // 5 Mbps initial estimate
+        switchInterval: 2,                   // seconds between ABR decisions
+        restrictions: {
+          minBandwidth: 200_000,
+          maxBandwidth: 20_000_000,
+        }
+      },
+      drm: {
+        // If you use DRM, set your license servers here. Example:
+        // servers: { 'com.widevine.alpha': 'https://license.example.com/wv' },
+        // advanced: { 'com.widevine.alpha': { videoRobustness: 'SW_SECURE_DECODE' } },
       }
-    );
+    });
 
-    // --- NEW: Low-Latency HLS Configuration ---
-    // Get the current playback configuration.
-    const playbackConfig = playerManager.getPlaybackConfig();
+    // UI status helper
+    function setStatus(text) {
+      statusEl.textContent = text;
+      context.setApplicationState(text);
+    }
 
-    // Enable Low-Latency HLS. This is the key setting for LL-HLS playback.
-    // It signals to the CAF SDK that it should use the player optimized for LL-HLS.
-    playbackConfig.lowLatencyHls = true;
+    async function loadWithShaka({ url, drm, config }) {
+      try {
+        setStatus('Loading…');
 
-    // Set the updated playback configuration.
-    playerManager.setPlaybackConfig(playbackConfig);
-    // --- END NEW SECTION ---
+        if (config && typeof config === 'object') {
+          player.configure(config);
+        }
+        if (drm && typeof drm === 'object') {
+          player.configure({ drm });
+        }
 
-    /**
-     * Starts the CastReceiverContext. This must be the last step.
-     * It signals to the Cast device that your application is ready to
-     * receive messages and media playback requests.
-     */
-    context.start();
+        // Very important for low-latency live: start near live edge
+        // Shaka automatically targets live edge if lowLatencyMode is true.
+        await player.load(url);
+
+        // Unmute if you want audio by default (policy may require user gesture)
+        video.muted = false;
+        video.play().catch(() => {/* autoplay may fail, keep muted if needed */});
+
+        setStatus('Playing');
+      } catch (err) {
+        console.error('Load error', err);
+        setStatus('Error: ' + (err && err.message ? err.message : 'Unknown'));
+      }
+    }
+
+    // Listen for sender connection events
+    context.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, (e) => {
+      console.log('Sender connected', e);
+    });
+    context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, (e) => {
+      console.log('Sender disconnected', e);
+    });
+
+    // Custom namespace for load/control messages
+    const bus = context.getCastMessageBus(NAMESPACE);
+
+    bus.onMessage = async (event) => {
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!data || !data.type) return;
+
+        switch (data.type) {
+          case 'LOAD': {
+            // Expected payload: { type: 'LOAD', url, drm?, config? }
+            await loadWithShaka({ url: data.url, drm: data.drm, config: data.config });
+            bus.send(event.senderId, JSON.stringify({ type: 'LOAD_OK' }));
+            break;
+          }
+          case 'PAUSE':
+            video.pause();
+            bus.send(event.senderId, JSON.stringify({ type: 'PAUSED' }));
+            break;
+          case 'PLAY':
+            video.play();
+            bus.send(event.senderId, JSON.stringify({ type: 'PLAYING' }));
+            break;
+          case 'SEEK': {
+            // { type: 'SEEK', time }
+            if (typeof data.time === 'number') {
+              video.currentTime = data.time;
+            }
+            bus.send(event.senderId, JSON.stringify({ type: 'SEEKED', time: video.currentTime }));
+            break;
+          }
+          case 'SET_LATENCY_TARGET': {
+            // { type: 'SET_LATENCY_TARGET', seconds }
+            const seconds = Number(data.seconds) || 3;
+            player.configure({ manifest: { defaultPresentationDelay: seconds } });
+            bus.send(event.senderId, JSON.stringify({ type: 'LATENCY_SET', seconds }));
+            break;
+          }
+          default:
+            console.warn('Unknown message', data);
+        }
+      } catch (err) {
+        console.error('Message handling error', err);
+      }
+    };
+
+    // Optional: also intercept CAF LOAD (e.g., when sender uses Default Media Channel)
+    playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, async (loadRequest) => {
+      // Try to pick manifest from contentUrl or contentId
+      const media = loadRequest.media || {};
+      const url = media.contentUrl || media.contentId;
+      if (url) {
+        await loadWithShaka({ url });
+        // Returning the original request tells CAF we've handled it; CAF UI will reflect state
+        return loadRequest; 
+      }
+      return loadRequest; // fall back (no-op)
+    });
+
+    // Handle basic video events for diagnostics
+    ['playing', 'pause', 'waiting', 'stalled', 'error', 'loadedmetadata'].forEach(evt => {
+      video.addEventListener(evt, () => console.log('[video]', evt));
+    });
+
+    // Tip: expose some helpers for remote debugging via chrome://inspect
+    window.__player = player;
+    window.__video = video;
+
   </script>
+
+  <!--
+  ================================================================
+  Example Sender Snippet (Web)
+  ================================================================
+  Use this from your web sender app after cast session is connected.
+
+  const context = cast.framework.CastContext.getInstance();
+  const session = context.getCurrentSession();
+  const NAMESPACE = 'urn:x-cast:com.example.cmaf';
+  const msg = { type: 'LOAD', url: 'https://cdn.example.com/live/manifest.mpd' };
+  session.sendMessage(NAMESPACE, msg);
+
+  // Alternatively, to use the Default Media Channel:
+  const mediaInfo = new chrome.cast.media.MediaInfo('https://cdn.example.com/live/manifest.mpd');
+  const request = new chrome.cast.media.LoadRequest(mediaInfo);
+  session.loadMedia(request);
+  -->
 </body>
 </html>
