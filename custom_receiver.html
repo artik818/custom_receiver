@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chromecast Receiver</title>
+    <!-- Web Receiver SDK -->
+    <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+    <!-- Cast Debug Logger -->
+    <script src="//www.gstatic.com/cast/sdk/libs/devtools/debug_layer/caf_receiver_logger.js"></script>
+    <script type="module" src="chromecast.js"></script>
+</head>
+
+<body style="background-color: #c22525;padding: 0px; margin: 0px;">
+    <div style="display: flex; flex-direction: column; height: 100vh;">
+        <div id="buttons" style="margin-bottom: 1pt;height: 55pt;background-color: #444;display: none;">
+            <button id="logsButton" onclick="toggleLogs()" style="width: 60pt; height: 50pt;">DBG</button>
+            <button id="nextButton" onclick="viewModel.onSourceSelected(1)" style="width: 60pt; height: 50pt;">Camera
+                1</button>
+            <button id="prevButton" onclick="viewModel.onSourceSelected(2)" style="width: 60pt; height: 50pt;">Camera
+                2</button>
+        </div>
+
+        <div style="flex: 1; background-color: #333;">
+            <div style="position: relative; width: 100%; height: 100%;">
+                <div id="remoteVideos"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);">
+                    <video id="video" style="width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5);"></video>
+                </div>
+                <div style="position: absolute; top: 30pt; right: 20pt; text-align: left; z-index: 10;display: none; background-color: rgba(51, 50, 50, 0.326); color: white; font-size: 10pt; font-family: Arial, sans-serif;padding: 10px;"
+                    id="frameNo"></div>
+                <div style="position: absolute; bottom: 30pt; left: 20pt; text-align: left; z-index: 10;display: none; background-color: rgba(51, 50, 50, 0.326); color: white; font-size: 10pt; font-family: Arial, sans-serif;padding: 10px;"
+                    id="status"></div>
+
+                <div style="position: absolute; top: 0; left: 0; width: 640pt; text-align: left; z-index: 10; display: none;padding: 10px;"
+                    id="logsDiv">
+                    <p id="logs"
+                        style="font-size: 9pt; text-align: left; background-color: rgba(194, 194, 194, 0.185); color: white; display: inline-block; padding: 10px; width: 640pt; font-family: Arial, sans-serif;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module">
+        import { RepoImpl } from './chromecast.js';
+        import { ConsoleClogImpl } from './Clog.js';
+        import { ChromecastView } from './ChromecastView.js';
+
+        const debugMode = false;
+        var view = null;
+        const clog = new ConsoleClogImpl();
+
+        window.onload = function () {
+            try {
+                clog.add("Chromecast receiver build 20250826_1136");
+                const repo = new RepoImpl(clog);
+                const viewModel = repo.getViewModel();
+                view = new ChromecastView(viewModel, repo.getCastContext(), debugMode);
+                viewModel.onLoadFinished();
+                if (debugMode) {
+                    document.getElementById('buttons').style.display = 'none';
+                    document.getElementById('logsDiv').style.display = 'block';
+                    document.getElementById('frameNo').style.display = 'block';
+                } else {
+                    document.getElementById('buttons').style.display = 'none';
+                    document.getElementById('logsDiv').style.display = 'none';
+                    document.getElementById('logsButton').style.display = 'none';
+                }
+            } catch (e) {
+                clog.add("Error in onload: " + e + "\n" + (e && e.stack ? e.stack : ""));
+            }
+        };
+    </script>
+</body>
+
+</html>
